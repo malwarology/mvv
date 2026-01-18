@@ -39,6 +39,8 @@ jobs:
           GOOS=darwin  GOARCH=arm64 go build -trimpath -ldflags="$LDFLAGS" -o dist/mvv-darwin-arm64
           GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="$LDFLAGS" -o dist/mvv-windows-amd64.exe
 
+          chmod +x dist/mvv-*
+
           ( cd dist && sha256sum mvv-* > SHA256SUMS )
 
       - name: Create GitHub release and upload assets
