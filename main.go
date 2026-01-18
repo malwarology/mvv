@@ -15,10 +15,9 @@ import (
 	"time"
 )
 
-const (
-	toolName    = "mvv"
-	toolVersion = "0.1.0"
-)
+const toolName = "mvv"
+
+var toolVersion = "dev"
 
 type lastState struct {
 	TypeLabel    string `json:"type"`
