@@ -687,6 +687,8 @@ type parsedFlags struct {
 	ShowHelp    bool
 	ShowVersion bool
 
+	PrintState bool
+
 	DryRun bool
 	Debug  bool
 
@@ -717,6 +719,9 @@ func parseFlags(argv []string, stderr io.Writer) (parsedFlags, *flag.FlagSet, in
 	fs.BoolVar(&pf.ShowHelp, "help", false, "show help")
 	fs.BoolVar(&pf.ShowVersion, "v", false, "show version")
 	fs.BoolVar(&pf.ShowVersion, "version", false, "show version")
+
+	fs.BoolVar(&pf.PrintState, "P", false, "print persistent state and exit")
+	fs.BoolVar(&pf.PrintState, "print", false, "print persistent state and exit")
 
 	fs.BoolVar(&pf.DryRun, "d", false, "dry run (no state write, no disk changes)")
 	fs.BoolVar(&pf.DryRun, "dry-run", false, "dry run (no state write, no disk changes)")
@@ -1481,6 +1486,29 @@ func run(argv []string, stdout, stderr io.Writer) int {
 	if pf.ShowVersion {
 		//goland:noinspection GoUnhandledErrorResult
 		fmt.Fprintf(stdout, "%s %s\n", toolName, toolVersion)
+		return 0
+	}
+
+	if pf.PrintState {
+		p, err := statePath()
+		if err != nil {
+			//goland:noinspection GoUnhandledErrorResult
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 2
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			if os.IsNotExist(err) {
+				//goland:noinspection GoUnhandledErrorResult
+				fmt.Fprintln(stdout, "STATE does not exist")
+				return 0
+			}
+			//goland:noinspection GoUnhandledErrorResult
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 2
+		}
+		//goland:noinspection GoUnhandledErrorResult
+		stdout.Write(b)
 		return 0
 	}
 
