@@ -197,6 +197,12 @@ State can be cleared using:
 -ccc   clear infix, type, subtype, destination
 ```
 
+State can be printed using:
+
+```bash
+mvv -P
+```
+
 ---
 
 ## Properties
