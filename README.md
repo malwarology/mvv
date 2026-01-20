@@ -100,6 +100,22 @@ mvv -n agenttesla_abcdef12.exe other_sample.bin
 
 ---
 
+
+## Copy mode
+
+Copy mode controls whether file operations are performed as **move** or **copy**.
+
+- Default behavior is **move**.
+- `-c` switches the **current invocation only** from move to copy.
+  - This modifier does not affect persistent state.
+- `-cc` toggles the persistent mode between move and copy.
+  - Must be used alone, with no other switches or operands.
+
+When `--dry-run` or `--debug (-D)` is used, the PLAN will show the selected operation explicitly as
+`operation: move` or `operation: copy`.
+
+Persistent state includes an optional `copy_mode` flag. If missing or false, move mode is assumed.
+
 ## Collision behavior
 
 - **Base mode and `-p`**:
@@ -192,9 +208,9 @@ Stored fields include:
 State can be cleared using:
 
 ```bash
--c     clear infix
--cc    clear infix, type, subtype
--ccc   clear infix, type, subtype, destination
+-x     clear infix
+-xx    clear infix, type, subtype
+-xxx   clear infix, type, subtype, destination
 ```
 
 State can be printed using:
