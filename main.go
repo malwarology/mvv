@@ -32,6 +32,7 @@ type state struct {
 	SubType    string `json:"stype,omitempty"`
 	Infix      string `json:"infix,omitempty"`
 	DestDirAbs string `json:"dest_dir_abs,omitempty"`
+	CopyMode   *bool  `json:"copy_mode,omitempty"`
 	UnixTime   int64  `json:"unix_time"`
 }
 
@@ -54,6 +55,7 @@ type planData struct {
 	DryRun  bool
 	Debug   bool
 	Mode    string
+	Op      string
 	WriteJS bool
 
 	Operand     string
@@ -127,8 +129,14 @@ Options:
   -j, --json
         Sidecar JSON (accepted; not persisted)
 
-  -c, -cc, -ccc
-        Clear state
+	-x, -xx, -xxx
+	      Clear state
+
+	-c
+	      Copy for this invocation only (does not persist)
+
+	-cc
+	      Toggle persistent copy mode (must be used alone)
 `, toolName, toolName)
 }
 
@@ -270,6 +278,34 @@ func targetExists(path string) (bool, error) {
 	return false, err
 }
 
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = in.Close() }()
+
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+
+	ok := false
+	defer func() {
+		_ = out.Close()
+		if !ok {
+			_ = os.Remove(dst)
+		}
+	}()
+
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+
+	ok = true
+	return out.Close()
+}
+
 func indexByte(s string, c byte) int {
 	for i := 0; i < len(s); i++ {
 		if s[i] == c {
@@ -299,7 +335,8 @@ func normalizeInterspersedArgv(argv []string) []string {
 		"-D": true, "--debug": true,
 		"-p": true,
 		"-j": true, "--json": true,
-		"-c": true, "-cc": true, "-ccc": true,
+		"-x": true, "-xx": true, "-xxx": true,
+		"-c": true, "-cc": true,
 	}
 
 	var flags []string
@@ -644,6 +681,7 @@ func printPlan(
 	opAbs string,
 	dest destInfo,
 	mode string,
+	operation string,
 	st state,
 	plannedInfix string,
 	infixLen int,
@@ -664,6 +702,7 @@ func printPlan(
 	fmt.Fprintf(w, "  destination:   %q\n", dest.Abs)
 	fmt.Fprintf(w, "  dest_source:   %s\n", dest.Source)
 	fmt.Fprintf(w, "  mode:          %s\n", mode)
+	fmt.Fprintf(w, "  operation:     %s\n", operation)
 	fmt.Fprintf(w, "  type:          %q\n", st.Type)
 	fmt.Fprintf(w, "  stype:         %q\n", st.SubType)
 	fmt.Fprintf(w, "  infix:         %q\n", plannedInfix)
@@ -702,6 +741,9 @@ type parsedFlags struct {
 
 	ExtOverride string
 	WriteJSON   bool
+
+	CopyOnce       bool
+	ToggleCopyMode bool
 
 	Clear1 bool
 	Clear2 bool
@@ -744,9 +786,12 @@ func parseFlags(argv []string, stderr io.Writer) (parsedFlags, *flag.FlagSet, in
 	fs.BoolVar(&pf.WriteJSON, "j", false, "sidecar JSON (accepted; not persisted)")
 	fs.BoolVar(&pf.WriteJSON, "json", false, "sidecar JSON (accepted; not persisted)")
 
-	fs.BoolVar(&pf.Clear1, "c", false, "clear infix")
-	fs.BoolVar(&pf.Clear2, "cc", false, "clear infix/type/stype")
-	fs.BoolVar(&pf.Clear3, "ccc", false, "clear infix/type/stype/destination")
+	fs.BoolVar(&pf.Clear1, "x", false, "clear infix")
+	fs.BoolVar(&pf.Clear2, "xx", false, "clear infix/type/stype")
+	fs.BoolVar(&pf.Clear3, "xxx", false, "clear infix/type/stype/destination")
+
+	fs.BoolVar(&pf.CopyOnce, "c", false, "copy for this invocation only (does not persist)")
+	fs.BoolVar(&pf.ToggleCopyMode, "cc", false, "toggle persistent copy mode (must be used alone)")
 
 	argv = normalizeInterspersedArgv(argv)
 
@@ -767,7 +812,7 @@ func runClear(pf parsedFlags, fs *flag.FlagSet, stdout, stderr io.Writer) int {
 
 	if !allowStateWrite {
 		//goland:noinspection GoUnhandledErrorResult
-		fmt.Fprintln(stderr, "error: --dry-run/-d cannot be used with -c/-cc/-ccc (would modify state)")
+		fmt.Fprintln(stderr, "error: --dry-run/-d cannot be used with -x/-xx/-xxx (would modify state)")
 		return 2
 	}
 
@@ -783,20 +828,20 @@ func runClear(pf parsedFlags, fs *flag.FlagSet, stdout, stderr io.Writer) int {
 	}
 	if n != 1 {
 		//goland:noinspection GoUnhandledErrorResult
-		fmt.Fprintln(stderr, "error: exactly one of -c, -cc, -ccc must be specified")
+		fmt.Fprintln(stderr, "error: exactly one of -x, -xx, -xxx must be specified")
 		return 2
 	}
 
 	if pf.TypeLabel != "" || pf.Stype != "" || pf.EnterParentByOperand || pf.InheritFrom != "" || pf.DestFlag != "" || pf.ExtOverride != "" ||
-		pf.WriteJSON || pf.DryRun || pf.Debug {
+		pf.WriteJSON || pf.DryRun || pf.Debug || pf.CopyOnce || pf.ToggleCopyMode {
 		//goland:noinspection GoUnhandledErrorResult
-		fmt.Fprintln(stderr, "error: -c/-cc/-ccc cannot be combined with other options")
+		fmt.Fprintln(stderr, "error: -x/-xx/-xxx cannot be combined with other options")
 		return 2
 	}
 
 	if len(fs.Args()) != 0 {
 		//goland:noinspection GoUnhandledErrorResult
-		fmt.Fprintln(stderr, "error: -c/-cc/-ccc do not accept operands")
+		fmt.Fprintln(stderr, "error: -x/-xx/-xxx do not accept operands")
 		return 2
 	}
 
@@ -824,7 +869,8 @@ func runClear(pf parsedFlags, fs *flag.FlagSet, stdout, stderr io.Writer) int {
 		st.DestDirAbs = ""
 	}
 
-	if st.Type == "" && st.SubType == "" && st.Infix == "" && st.DestDirAbs == "" {
+	copyOff := st.CopyMode == nil || !*st.CopyMode
+	if st.Type == "" && st.SubType == "" && st.Infix == "" && st.DestDirAbs == "" && copyOff {
 		if err := removeStateFileIfExists(); err != nil {
 			//goland:noinspection GoUnhandledErrorResult
 			fmt.Fprintf(stderr, "error: failed to clear state: %v\n", err)
@@ -845,6 +891,69 @@ func runClear(pf parsedFlags, fs *flag.FlagSet, stdout, stderr io.Writer) int {
 	return 0
 }
 
+func runToggleCopyMode(pf parsedFlags, fs *flag.FlagSet, stdout, stderr io.Writer) int {
+	allowStateWrite := !pf.DryRun // default and --debug allow state writes; --dry-run forbids them
+
+	if !allowStateWrite {
+		//goland:noinspection GoUnhandledErrorResult
+		fmt.Fprintln(stderr, "error: --dry-run/-d cannot be used with -cc (would modify state)")
+		return 2
+	}
+
+	if pf.ShowHelp || pf.ShowVersion || pf.PrintState || pf.Debug || pf.CopyOnce || pf.Clear1 || pf.Clear2 || pf.Clear3 ||
+		pf.TypeLabel != "" || pf.Stype != "" || pf.EnterParentByOperand || pf.InheritFrom != "" || pf.DestFlag != "" ||
+		pf.ExtOverride != "" || pf.WriteJSON {
+		//goland:noinspection GoUnhandledErrorResult
+		fmt.Fprintln(stderr, "error: -cc must be used alone")
+		return 2
+	}
+
+	if len(fs.Args()) != 0 {
+		//goland:noinspection GoUnhandledErrorResult
+		fmt.Fprintln(stderr, "error: -cc does not accept operands")
+		return 2
+	}
+
+	st, err := loadState()
+	if err != nil {
+		//goland:noinspection GoUnhandledErrorResult
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 2
+	}
+	if st == nil {
+		st = &state{}
+	}
+
+	cur := false
+	if st.CopyMode != nil {
+		cur = *st.CopyMode
+	}
+	next := !cur
+	st.CopyMode = &next
+
+	// If toggling produces a fully empty state with copy_mode off, remove the file.
+	if st.Type == "" && st.SubType == "" && st.Infix == "" && st.DestDirAbs == "" && !next {
+		if err := removeStateFileIfExists(); err != nil {
+			//goland:noinspection GoUnhandledErrorResult
+			fmt.Fprintf(stderr, "error: failed to update state: %v\n", err)
+			return 2
+		}
+		//goland:noinspection GoUnhandledErrorResult
+		fmt.Fprintln(stdout, "STATE cleared")
+		return 0
+	}
+
+	if err := writeState(st); err != nil {
+		//goland:noinspection GoUnhandledErrorResult
+		fmt.Fprintf(stderr, "error: failed to write state: %v\n", err)
+		return 2
+	}
+
+	//goland:noinspection GoUnhandledErrorResult
+	fmt.Fprintln(stdout, "STATE updated")
+	return 0
+}
+
 func isWorkingOnlyCommand(pf parsedFlags, fs *flag.FlagSet) bool {
 	// Allow: just -w/--working (and optional -d/-D), with no operands.
 	if len(fs.Args()) != 0 {
@@ -853,7 +962,8 @@ func isWorkingOnlyCommand(pf parsedFlags, fs *flag.FlagSet) bool {
 	if pf.DestFlag == "" {
 		return false
 	}
-	if pf.TypeLabel != "" || pf.Stype != "" || pf.EnterParentByOperand || pf.InheritFrom != "" || pf.ExtOverride != "" || pf.WriteJSON {
+	if pf.TypeLabel != "" || pf.Stype != "" || pf.EnterParentByOperand || pf.InheritFrom != "" || pf.ExtOverride != "" || pf.WriteJSON ||
+		pf.CopyOnce || pf.ToggleCopyMode {
 		return false
 	}
 	// Clear flags handled elsewhere; help/version handled earlier.
@@ -996,10 +1106,16 @@ func phasePlanValidate(pf parsedFlags, fs *flag.FlagSet, stderr io.Writer) (*pla
 		cur = *oldState
 	}
 
+	stateCopyOn := cur.CopyMode != nil && *cur.CopyMode
+	opStr := "move"
+	if pf.CopyOnce || stateCopyOn {
+		opStr = "copy"
+	}
+
 	// State invariant: infix is present but type missing -> invalid state.
 	if cur.Infix != "" && cur.Type == "" {
 		//goland:noinspection GoUnhandledErrorResult
-		fmt.Fprintln(stderr, "error: state invalid; clear with -cc or -ccc")
+		fmt.Fprintln(stderr, "error: state invalid; clear with -xx or -xxx")
 		return nil, 2
 	}
 
@@ -1241,6 +1357,7 @@ func phasePlanValidate(pf parsedFlags, fs *flag.FlagSet, stderr io.Writer) (*pla
 		DryRun:  pf.DryRun,
 		Debug:   pf.Debug,
 		Mode:    mode,
+		Op:      opStr,
 		WriteJS: pf.WriteJSON,
 
 		Operand:     operand,
@@ -1391,6 +1508,15 @@ func phaseRenameIfNeeded(pd *planData, stderr io.Writer) int {
 		return 2
 
 	}
+	if pd.Op == "copy" {
+		if err := copyFile(pd.OperandAbs, pd.PlannedPath); err != nil {
+			//goland:noinspection GoUnhandledErrorResult
+			fmt.Fprintf(stderr, "error: copy failed: %v\n", err)
+			return 2
+		}
+		return 0
+	}
+
 	if err := os.Rename(pd.OperandAbs, pd.PlannedPath); err != nil {
 		// Cross-device moves surface here (no copy+delete yet).
 		//goland:noinspection GoUnhandledErrorResult
@@ -1409,6 +1535,7 @@ func phaseSidecarAndOutput(pd *planData, stdout, stderr io.Writer) int {
 			pd.OperandAbs,
 			pd.Dest,
 			pd.Mode,
+			pd.Op,
 			pd.Cur,
 			pd.PlannedInfix,
 			pd.InfixLen,
@@ -1515,6 +1642,11 @@ func run(argv []string, stdout, stderr io.Writer) int {
 	// Clear flags are exclusive and operand-less.
 	if pf.Clear1 || pf.Clear2 || pf.Clear3 {
 		return runClear(pf, fs, stdout, stderr)
+	}
+
+	// Toggle persistent copy mode (exclusive and operand-less).
+	if pf.ToggleCopyMode {
+		return runToggleCopyMode(pf, fs, stdout, stderr)
 	}
 
 	// Allow setting working directory with no operand.
