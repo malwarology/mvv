@@ -24,7 +24,7 @@ const toolName = "mvv"
 var toolVersion = "dev"
 
 var inheritNameRE = regexp.MustCompile(
-	`^([a-z0-9]{3,}(?:_[a-z0-9]+)*)_((?:[a-f0-9]{2}){4,32})(?:_([a-z0-9]{3,}(?:_[a-z0-9]+)*))?\.[a-z0-9][a-z0-9_-]*$`,
+	`^([a-z0-9]{3,}(?:_[a-z0-9]+)*)_((?:[a-f0-9]{2}){4,32})(?:_([a-z0-9]{1,}(?:_[a-z0-9]+)*))?\.[a-z0-9][a-z0-9_-]*$`,
 )
 
 type state struct {
