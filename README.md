@@ -10,11 +10,11 @@ The tool renames (or moves) a file to a structured name derived from analyst‑s
 ## Filename format
 
 ```
-<type>_<hash-prefix>[_<stype>].<ext>
+<type>_<hash-infix>[_<stype>].<ext>
 ```
 
 - **type**: primary analyst label (required initially)
-- **hash‑prefix**: SHA‑256 prefix, starting at 8 hex characters and automatically extended on collision
+- **hash‑infix**: SHA‑256 infix, starting at 8 hex characters and automatically extended on collision
 - **stype**: optional subtype label
 - **ext**: resolved extension
 
@@ -74,7 +74,7 @@ This updates state only and performs no rename.
 
 ## Parent mode
 
-Parent mode allows multiple related samples to share a common hash prefix.
+Parent mode allows multiple related samples to share a common hash infix.
 
 ### Enter parent mode using a file
 
@@ -82,11 +82,11 @@ Parent mode allows multiple related samples to share a common hash prefix.
 mvv -t agenttesla -p first_sample.bin
 ```
 
-The computed hash prefix is stored in state.
+The computed hash infix is stored in state.
 
 ### Continue parent mode
 
-Subsequent runs reuse the stored prefix:
+Subsequent runs reuse the stored infix:
 
 ```bash
 mvv second_sample.bin
@@ -119,10 +119,10 @@ Persistent state includes an optional `copy_mode` flag. If missing or false, mov
 ## Collision behavior
 
 - **Base mode and `-p`**:
-  Hash prefix is automatically extended by 2 hex characters until a unique filename is found.
+  Hash infix is automatically extended by 2 hex characters until a unique filename is found.
 
 - **Parent continuation / `-n`**:
-  Collisions are **hard errors**. The prefix is never extended.
+  Collisions are **hard errors**. The infix is never extended.
 
 - **Default execution**:
   The final target must not already exist. Any collision results in an error.
@@ -202,7 +202,7 @@ State is stored under:
 Stored fields include:
 
 - last used type / subtype
-- parent hash prefix (if any)
+- parent hash infix (if any)
 - working directory
 
 State can be cleared using:
