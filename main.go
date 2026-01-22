@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -1518,9 +1520,26 @@ func phaseRenameIfNeeded(pd *planData, stderr io.Writer) int {
 	}
 
 	if err := os.Rename(pd.OperandAbs, pd.PlannedPath); err != nil {
-		// Cross-device moves surface here (no copy+delete yet).
+		// Cross-device moves surface here; fall back to copy+unlink.
+		// os.Rename typically returns *os.LinkError with Err == syscall.EXDEV.
+		var linkErr *os.LinkError
+		if (errors.As(err, &linkErr) && errors.Is(linkErr.Err, syscall.EXDEV)) || errors.Is(err, syscall.EXDEV) ||
+			strings.Contains(err.Error(), "cross-device") || strings.Contains(err.Error(), "EXDEV") {
+			if err := copyFile(pd.OperandAbs, pd.PlannedPath); err != nil {
+				//goland:noinspection GoUnhandledErrorResult
+				fmt.Fprintf(stderr, "error: copy failed (fallback): %v", err)
+				return 2
+			}
+			if err := os.Remove(pd.OperandAbs); err != nil {
+				//goland:noinspection GoUnhandledErrorResult
+				fmt.Fprintf(stderr, "error: cleanup failed after copy: %v", err)
+				return 2
+			}
+			return 0
+		}
+
 		//goland:noinspection GoUnhandledErrorResult
-		fmt.Fprintf(stderr, "error: rename failed: %v\n", err)
+		fmt.Fprintf(stderr, "error: rename failed: %v", err)
 		return 2
 	}
 
