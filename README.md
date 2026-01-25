@@ -107,7 +107,7 @@ Copy mode controls whether file operations are performed as **move** or **copy**
 
 - Default behavior is **move**.
 - `-c` switches the **current invocation only** from move to copy.
-  - This modifier does not affect persistent state.
+  - This modifier does not affect the persistent state.
 - `-cc` toggles the persistent mode between move and copy.
   - Must be used alone, with no other switches or operands.
 
@@ -218,6 +218,27 @@ State can be printed using:
 ```bash
 mvv -P
 ```
+
+
+---
+
+## List destination directory (`-l` / `--list`)
+
+Prints a long-format directory listing of the persisted working directory (`dest_dir_abs` in state).
+
+Rules:
+
+- Must be used **alone**
+- Accepts **no operands**
+- Reads state only (no writes)
+- If state is missing or no destination is set, prints a clear message
+
+Example:
+
+```bash
+mvv -l
+```
+
 
 ---
 

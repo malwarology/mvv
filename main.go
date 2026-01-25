@@ -131,6 +131,9 @@ Options:
   -j, --json
         Sidecar JSON (accepted; not persisted)
 
+  -l, --list
+        List destination working directory from state and exit
+
 	-x, -xx, -xxx
 	      Clear state
 
@@ -339,6 +342,7 @@ func normalizeInterspersedArgv(argv []string) []string {
 		"-j": true, "--json": true,
 		"-x": true, "-xx": true, "-xxx": true,
 		"-c": true, "-cc": true,
+		"-l": true, "--list": true,
 	}
 
 	var flags []string
@@ -730,6 +734,8 @@ type parsedFlags struct {
 
 	PrintState bool
 
+	ListDest bool
+
 	DryRun bool
 	Debug  bool
 
@@ -766,6 +772,9 @@ func parseFlags(argv []string, stderr io.Writer) (parsedFlags, *flag.FlagSet, in
 
 	fs.BoolVar(&pf.PrintState, "P", false, "print persistent state and exit")
 	fs.BoolVar(&pf.PrintState, "print", false, "print persistent state and exit")
+
+	fs.BoolVar(&pf.ListDest, "l", false, "list destination directory and exit")
+	fs.BoolVar(&pf.ListDest, "list", false, "list destination directory and exit")
 
 	fs.BoolVar(&pf.DryRun, "d", false, "dry run (no state write, no disk changes)")
 	fs.BoolVar(&pf.DryRun, "dry-run", false, "dry run (no state write, no disk changes)")
@@ -1658,6 +1667,48 @@ func run(argv []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 
+	if pf.ListDest {
+		if pf.ShowHelp || pf.ShowVersion || pf.PrintState || pf.Debug || pf.DryRun ||
+			pf.TypeLabel != "" || pf.Stype != "" || pf.EnterParentByOperand || pf.InheritFrom != "" ||
+			pf.DestFlag != "" || pf.ExtOverride != "" || pf.WriteJSON || pf.CopyOnce || pf.ToggleCopyMode ||
+			pf.Clear1 || pf.Clear2 || pf.Clear3 || len(fs.Args()) != 0 {
+			//goland:noinspection GoUnhandledErrorResult
+			fmt.Fprintln(stderr, "error: -l/--list must be used alone")
+			return 2
+		}
+
+		st, err := loadState()
+		if err != nil {
+			//goland:noinspection GoUnhandledErrorResult
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 2
+		}
+		if st == nil || st.DestDirAbs == "" {
+			//goland:noinspection GoUnhandledErrorResult
+			fmt.Fprintln(stdout, "no destination directory set")
+			return 0
+		}
+
+		entries, err := os.ReadDir(st.DestDirAbs)
+		if err != nil {
+			//goland:noinspection GoUnhandledErrorResult
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 2
+		}
+
+		for _, e := range entries {
+			info, err := e.Info()
+			if err != nil {
+				continue
+			}
+			mode := info.Mode().String()
+			size := info.Size()
+			mod := info.ModTime().Format("2006-01-02 15:04:05")
+			//goland:noinspection GoUnhandledErrorResult
+			fmt.Fprintf(stdout, "%s %8d %s %s\n", mode, size, mod, info.Name())
+		}
+		return 0
+	}
 	// Clear flags are exclusive and operand-less.
 	if pf.Clear1 || pf.Clear2 || pf.Clear3 {
 		return runClear(pf, fs, stdout, stderr)
