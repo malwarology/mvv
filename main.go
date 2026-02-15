@@ -134,14 +134,14 @@ Options:
   -l, --list
         List destination working directory from state and exit
 
-	-x, -xx, -xxx
-	      Clear state
+  -x, -xx, -xxx
+        Clear state
 
-	-c
-	      Copy for this invocation only (does not persist)
+  -c
+        Copy for this invocation only (does not persist)
 
-	-cc
-	      Toggle persistent copy mode (must be used alone)
+  -cc
+        Toggle persistent copy mode (must be used alone)
 `, toolName, toolName)
 }
 
